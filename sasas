@@ -3,7 +3,7 @@ local LP = Players.LocalPlayer
 local Enabled = true
 local Cache = {}
 
--- Couleurs de rareté 
+-- Couleurs de rareté pour BlockSpin
 local COLORS = {
     Common = Color3.fromRGB(255, 255, 255),
     Uncommon = Color3.fromRGB(99, 255, 52),
@@ -13,13 +13,27 @@ local COLORS = {
     Omega = Color3.fromRGB(255, 20, 51)
 }
 
--- Fonction pour obtenir le nom réel au lieu du chiffre 
+-- FONCTION CRUCIALE : Récupère le nom réel (AK, RPG, etc.)
 local function GetRealName(t)
-    local attr = t:GetAttribute("ItemName") or t:GetAttribute("DisplayName")
+    -- 1. Cherche dans les attributs (méthode principale de BlockSpin)
+    local attr = t:GetAttribute("ItemName") or t:GetAttribute("DisplayName") or t:GetAttribute("WeaponName")
     if attr and tostring(attr) ~= "" and not tonumber(tostring(attr)) then 
         return tostring(attr) 
     end
-    return t.Name
+
+    -- 2. Cherche une StringValue appelée "Name" à l'intérieur de l'outil
+    local nameObj = t:FindFirstChild("Name") or t:FindFirstChild("WeaponName")
+    if nameObj and nameObj:IsA("StringValue") and nameObj.Value ~= "" then
+        return nameObj.Value
+    end
+
+    -- 3. Si c'est toujours un chiffre, on nettoie le nom de l'outil
+    local n = t.Name
+    if tonumber(n) then
+        return "Arme ("..n..")" -- Affiche l'ID seulement si rien d'autre n'est trouvé
+    end
+    
+    return n
 end
 
 local function Update(p)
@@ -50,9 +64,10 @@ local function Update(p)
     b.Enabled = Enabled and (#items > 0)
     for _, t in ipairs(items) do
         local txt = Instance.new("TextLabel", c)
-        txt.Size = UDim2.new(0, 90, 0, 25)
+        txt.Size = UDim2.new(0, 100, 0, 30)
         txt.BackgroundTransparency = 1
-        txt.Text = GetRealName(t) -- Affiche le vrai nom 
+        txt.Text = GetRealName(t) -- UTILISE LE NOM RÉEL ICI
+        
         local r = t:GetAttribute("RarityName") or t:GetAttribute("Rarity") or "Common"
         txt.TextColor3 = COLORS[r] or Color3.new(1,1,1)
         txt.Font = Enum.Font.GothamBold
@@ -67,20 +82,23 @@ local function Create(p)
         local hrp = char:WaitForChild("HumanoidRootPart", 10)
         if not hrp then return end
         if Cache[p] then Cache[p]:Destroy() end
+        
         local b = Instance.new("BillboardGui", hrp)
         b.Name = "ItemESP"
         b.Size = UDim2.new(0, 300, 0, 40)
-        b.StudsOffset = Vector3.new(0, -4.5, 0) -- Position sous les pieds [cite: 7]
+        b.StudsOffset = Vector3.new(0, -4.5, 0) -- BIEN SOUS LES PIEDS
         b.AlwaysOnTop = true
+        
         local c = Instance.new("Frame", b)
         c.Name = "Container"
         c.Size = UDim2.new(1, 0, 1, 0)
         c.BackgroundTransparency = 1
         Cache[p] = b
+        
         task.spawn(function()
             while char.Parent and b.Parent do
                 Update(p)
-                task.wait(1)
+                task.wait(1.5)
             end
         end)
     end
@@ -91,13 +109,15 @@ end
 for _, p in ipairs(Players:GetPlayers()) do Create(p) end
 Players.PlayerAdded:Connect(Create)
 
--- Interface Toggle [cite: 12]
+-- Bouton Toggle
 local sg = Instance.new("ScreenGui", LP.PlayerGui)
 local btn = Instance.new("TextButton", sg)
-btn.Size = UDim2.new(0, 80, 0, 30)
+btn.Size = UDim2.new(0, 100, 0, 35)
 btn.Position = UDim2.new(0, 10, 0, 10)
-btn.Text = "ESP ITEMS"
+btn.Text = "ESP ARMES"
 btn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+btn.Font = Enum.Font.GothamBold
+btn.TextColor3 = Color3.new(1,1,1)
 btn.MouseButton1Click:Connect(function()
     Enabled = not Enabled
     btn.BackgroundColor3 = Enabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 0, 0)
