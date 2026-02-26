@@ -96,7 +96,7 @@ local function createBillboard(player)
         bb.StudsOffset = Vector3.new(0, -4.3, 0)
         bb.AlwaysOnTop = true
         bb.LightInfluence = 0
-        bb.MaxDistance = 110
+        bb.MaxDistance = 0   -- <--- ICI : 0 = visible de très loin
         bb.Enabled = ItemESP_Enabled
         bb.Parent = hrp
 
@@ -145,7 +145,7 @@ Players.PlayerRemoving:Connect(function(p)
     end
 end)
 
--- Petit bouton toggle
+-- GUI toggle
 local sg = Instance.new("ScreenGui")
 sg.Name = "ItemESP_Toggle"
 sg.ResetOnSpawn = false
@@ -199,4 +199,4 @@ btn.MouseButton1Click:Connect(function()
     end
 end)
 
-print("Item ESP sous les pieds - OK avec attribut Rarity")
+print("Item ESP sans limite de distance (visible de loin)")
