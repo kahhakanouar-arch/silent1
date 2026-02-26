@@ -16,6 +16,7 @@ local GunNames = {
 local GunLookup = {}
 for _, name in pairs(GunNames) do GunLookup[name] = true end
 
+-- FOV Circle (créé et mis à jour AVANT le hook pour éviter le blocage)
 local fovCircle = Drawing.new("Circle")
 fovCircle.Color = Color3.new(1,1,1)
 fovCircle.Thickness = 2
@@ -23,10 +24,49 @@ fovCircle.NumSides = 100
 fovCircle.Radius = FOV
 fovCircle.Filled = false
 fovCircle.Visible = true
+fovCircle.Transparency = 1  -- Ajout pour fluidité (optionnel)
 
---// Prediction Settings
-local PREDICTION_FACTOR = 0.165
+-- Position initiale (fix pour Xeno)
+local function updateFOVPosition()
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    fovCircle.Position = center
+end
+updateFOVPosition()  -- Position immédiate
 
+-- Tracer
+local tracerLine = Drawing.new("Line")
+tracerLine.Color = Color3.new(1,0,0)
+tracerLine.Thickness = 2
+tracerLine.Visible = false
+tracerLine.Transparency = 1
+
+-- Boucle de mise à jour (connectée IMMÉDIATEMENT pour que FOV marche toujours)
+RunService.RenderStepped:Connect(function()
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    fovCircle.Position = center
+    fovCircle.Radius = FOV
+    
+    -- Tracer vers la target
+    local target = GetClosestTarget()  -- Définie plus bas, mais on l'utilise ici
+    if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+        local predictedPos = PredictPosition(target.Character.HumanoidRootPart)  -- Définie plus bas
+        local screenPos, onScreen = Camera:WorldToViewportPoint(predictedPos)
+        
+        if onScreen then
+            local ourHeadPos = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head") and LocalPlayer.Character.Head.Position
+            if ourHeadPos then
+                local screenStart, _ = Camera:WorldToViewportPoint(ourHeadPos)
+                tracerLine.From = Vector2.new(screenStart.X, screenStart.Y)
+                tracerLine.To = Vector2.new(screenPos.X, screenPos.Y)
+                tracerLine.Visible = true
+                return  -- Optimisation
+            end
+        end
+    end
+    tracerLine.Visible = false
+end)
+
+-- Fonctions (déplacées après pour que la boucle marche direct)
 local function GetClosestTarget()
     local closest
     local shortest = math.huge
@@ -48,17 +88,16 @@ local function GetClosestTarget()
     return closest
 end
 
---// Prediction สำหรับ HumanoidRootPart (รองรับ เดิน วิ่ง กระโดด รถ)
 local function PredictPosition(rootPart)
     if not rootPart then return Vector3.new(0,0,0) end
     
     local velocity = rootPart.Velocity
-    local prediction = rootPart.Position + (velocity * PREDICTION_FACTOR)
+    local prediction = rootPart.Position + (velocity * 0.165)
     
-    -- รองรับรถ
+    -- Remplacement WeldConstraint par FindFirstChildOfClass pour compatibilité
     local seat = rootPart:FindFirstChildWhichIsA("WeldConstraint") or rootPart:FindFirstChildWhichIsA("Weld")
     if seat and seat.Part0 then
-        prediction = rootPart.Position + (seat.Part0.Velocity * PREDICTION_FACTOR * 1.2)
+        prediction = rootPart.Position + (seat.Part0.Velocity * 0.165 * 1.2)
     end
     
     return prediction
@@ -70,59 +109,63 @@ local function IsHoldingAllowedGun(args)
     if typeof(weapon) == "Instance" and GunLookup[weapon.Name] then
         return true
     end
-    for _, child in pairs(LocalPlayer.Character:GetChildren()) do
-        if (child:IsA("Tool") or child:IsA("Model")) and GunLookup[child.Name] then
-            return true
+    if LocalPlayer.Character then
+        for _, child in pairs(LocalPlayer.Character:GetChildren()) do
+            if (child:IsA("Tool") or child:IsA("Model")) and GunLookup[child.Name] then
+                return true
+            end
         end
     end
     return false
 end
 
-local send = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Send")
-local oldFire
-oldFire = hookfunction(send.FireServer, function(self, ...)
-    local args = {...}
-    if SilentAimEnabled and IsHoldingAllowedGun(args) then
-        CurrentTarget = GetClosestTarget()
-        if CurrentTarget and CurrentTarget.Character and CurrentTarget.Character:FindFirstChild("HumanoidRootPart") then
-            targetRoot = CurrentTarget.Character.HumanoidRootPart
-            aimPos = PredictPosition(targetRoot)  -- ยิง Hamanoi + Prediction
-            
-            -- ส่งไปที่ Hamanoi แทน Head
-            args[4] = CFrame.new(1/0,1/0,1/0,0/0,0/0,0/0,0/0,0/0,0/0,0/0,0/0,0/0)
-            args[5] = {[1]={[1]={["Instance"]=targetRoot, ["Position"]=aimPos}}}
-        end
+-- Fonction d'attente avec timeout (pour éviter blocage)
+local function waitForChild(parent, childName, timeout)
+    timeout = timeout or 5
+    local start = tick()
+    while tick() - start < timeout do
+        local child = parent:FindFirstChild(childName)
+        if child then return child end
+        game:GetService("RunService").Heartbeat:Wait()
     end
-    return oldFire(self, unpack(args))
-end)
+    return nil
+end
 
--- Tracer ชี้ Hamanoi เหมือนกัน
-local tracerLine = Drawing.new("Line")
-tracerLine.Color = Color3.new(1,0,0)
-tracerLine.Thickness = 2
-tracerLine.Visible = false
-
-RunService.RenderStepped:Connect(function()
-    fovCircle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-    fovCircle.Radius = FOV
-    
-    local target = GetClosestTarget()
-    if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-        local predictedPos = PredictPosition(target.Character.HumanoidRootPart)
-        local screenPos, onScreen = Camera:WorldToViewportPoint(predictedPos)
+-- Hook dans un spawn() avec pcall (ne bloque PAS le FOV)
+spawn(function()
+    local success, err = pcall(function()
+        local remotes = waitForChild(ReplicatedStorage, "Remotes", 5)
+        if not remotes then
+            warn("Remotes non trouvé!")
+            return
+        end
         
-        if onScreen then
-            local ourHeadPos = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head") and LocalPlayer.Character.Head.Position
-            if ourHeadPos then
-                local screenStart, _ = Camera:WorldToViewportPoint(ourHeadPos)
-                tracerLine.From = Vector2.new(screenStart.X, screenStart.Y)
-                tracerLine.To = Vector2.new(screenPos.X, screenPos.Y)
-                tracerLine.Visible = true
-            end
-        else
-            tracerLine.Visible = false
+        local send = waitForChild(remotes, "Send", 2)
+        if not send then
+            warn("Send non trouvé!")
+            return
         end
-    else
-        tracerLine.Visible = false
+        
+        local oldFire = hookfunction(send.FireServer, function(self, ...)
+            local args = {...}
+            if SilentAimEnabled and IsHoldingAllowedGun(args) then
+                CurrentTarget = GetClosestTarget()
+                if CurrentTarget and CurrentTarget.Character and CurrentTarget.Character:FindFirstChild("HumanoidRootPart") then
+                    targetRoot = CurrentTarget.Character.HumanoidRootPart
+                    aimPos = PredictPosition(targetRoot)
+                    
+                    -- Silent Aim vers HRP + Prediction
+                    args[4] = CFrame.new(1/0,1/0,1/0,0/0,0/0,0/0,0/0,0/0,0/0,0/0,0/0,0/0)
+                    args[5] = {[1]={[1]={["Instance"]=targetRoot, ["Position"]=aimPos}}}
+                end
+            end
+            return oldFire(self, unpack(args))
+        end)
+    end)
+    
+    if not success then
+        warn("Erreur hook: " .. tostring(err))
     end
 end)
+
+print("Silent Aim + FOV chargé ! (FOV fixé pour Xeno)")  -- Confirmation
