@@ -1,11 +1,9 @@
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local ItemESP_Enabled = true
-
 local BillboardCache = {}
-local ItemESP_UpdateConnections = {}
 
 local RARITY_COLORS = {
     ["Common"] = Color3.fromRGB(255, 255, 255),
@@ -16,139 +14,129 @@ local RARITY_COLORS = {
     ["Omega"] = Color3.fromRGB(255, 20, 51),
 }
 
--- Tentative de récupération du nom par toutes les méthodes possibles
-local function getToolName(tool)
-    local attrName = tool:GetAttribute("ItemName") or tool:GetAttribute("DisplayName") or tool:GetAttribute("Name") [cite: 2]
-    if attrName and tostring(attrName) ~= "" then
-        return tostring(attrName)
-    end
-    
-    -- Si c'est un chiffre, on cherche un StringValue à l'intérieur
-    local nameVal = tool:FindFirstChild("Name") or tool:FindFirstChild("ItemName")
-    if nameVal and nameVal:IsA("StringValue") then
-        return nameVal.Value
+-- Fonction ultra-précise pour choper le nom dans BlockSpin
+local function getRealName(tool)
+    -- 1. Test des Attributes (très courant dans BlockSpin) [cite: 1, 2]
+    local attr = tool:GetAttribute("ItemName") or tool:GetAttribute("DisplayName") or tool:GetAttribute("Rarity")
+    if attr and tostring(attr) ~= "" and not tonumber(tostring(attr)) then 
+        return tostring(attr) 
     end
 
-    return tool.Name -- Retour par défaut [cite: 5]
-end
+    -- 2. Test des StringValues internes
+    for _, v in ipairs(tool:GetChildren()) do
+        if v:IsA("StringValue") and v.Name:lower():find("name") then
+            return v.Value
+        end
+    end
 
-local function getToolColor(tool)
-    local rarity = tool:GetAttribute("RarityName") or tool:GetAttribute("Rarity") or "Common" [cite: 2]
-    return RARITY_COLORS[rarity] or Color3.fromRGB(180, 180, 180)
+    -- 3. Si le nom est un chiffre, on renvoie "Chargement..." au lieu du chiffre
+    if tonumber(tool.Name) then
+        return "Equipped Item"
+    end
+
+    return tool.Name
 end
 
 local function updateESP(player)
     local bb = BillboardCache[player]
-    if not bb then return end
+    if not bb or not ItemESP_Enabled then 
+        if bb then bb.Enabled = false end
+        return 
+    end
 
-    bb.Enabled = ItemESP_Enabled
     local container = bb:FindFirstChild("EspContainer")
     if not container then return end
-
     container:ClearAllChildren()
 
-    local layout = Instance.new("UIListLayout")
-    layout.FillDirection = Enum.FillDirection.Horizontal
+    local layout = Instance.new("UIListLayout", container)
+    layout.FillDirection = Enum.FillDirection.Vertical
     layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    layout.VerticalAlignment = Enum.VerticalAlignment.Center
-    layout.Padding = UDim.new(0, 5)
-    layout.Parent = container [cite: 3]
+    layout.Padding = UDim.new(0, 2)
 
-    local tools = {}
-    local char = player.Character
-    if char then
-        for _, c in ipairs(char:GetChildren()) do
-            if c:IsA("Tool") and c.Name ~= "Fists" then [cite: 3]
-                table.insert(tools, c)
-            end
-        end
-        local bp = player:FindFirstChild("Backpack") [cite: 4]
-        if bp then
-            for _, c in ipairs(bp:GetChildren()) do
-                if c:IsA("Tool") and c.Name ~= "Fists" then [cite: 4]
-                    table.insert(tools, c)
-                end
+    local foundTools = {}
+    
+    -- Check Character (Equipé) [cite: 3]
+    if player.Character then
+        for _, obj in ipairs(player.Character:GetChildren()) do
+            if obj:IsA("Tool") and obj.Name ~= "Fists" then
+                table.insert(foundTools, obj)
             end
         end
     end
 
-    if #tools == 0 then return end
+    -- Check Backpack (Inventaire) [cite: 4]
+    local bp = player:FindFirstChild("Backpack")
+    if bp then
+        for _, obj in ipairs(bp:GetChildren()) do
+            if obj:IsA("Tool") and obj.Name ~= "Fists" then
+                table.insert(foundTools, obj)
+            end
+        end
+    end
 
-    for _, tool in ipairs(tools) do
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(0, 100, 0, 30)
+    for _, tool in ipairs(foundTools) do
+        local name = getRealName(tool)
+        local lbl = Instance.new("TextLabel", container)
+        lbl.Size = UDim2.new(0, 120, 0, 20)
         lbl.BackgroundTransparency = 1
-        lbl.Text = getToolName(tool)
-        lbl.TextColor3 = getToolColor(tool)
+        lbl.Text = name
+        lbl.TextColor3 = RARITY_COLORS[tool:GetAttribute("Rarity")] or Color3.new(1,1,1)
+        lbl.Font = Enum.Font.GothamBold
         lbl.TextScaled = true
-        lbl.Font = Enum.Font.GothamBold [cite: 6]
-        lbl.TextStrokeTransparency = 0.5
-        lbl.TextStrokeColor3 = Color3.new(0,0,0)
-        lbl.Parent = container
+        lbl.TextStrokeTransparency = 0
     end
+    
+    bb.Enabled = (#foundTools > 0)
 end
 
-local function createBillboard(player)
-    if player == LocalPlayer or BillboardCache[player] then return end
+local function createESP(player)
+    if player == LocalPlayer then return end
 
-    local conns = {}
-
-    local function setup()
-        local char = player.Character
-        if not char then return end
-        local hrp = char:WaitForChild("HumanoidRootPart", 5)
+    local function setup(char)
+        local hrp = char:WaitForChild("HumanoidRootPart", 10)
         if not hrp then return end
 
-        if BillboardCache[player] then BillboardCache[player]:Destroy() end
-
         local bb = Instance.new("BillboardGui")
-        bb.Name = "ItemESP"
+        bb.Name = "BlockSpinESP"
         bb.Adornee = hrp
-        bb.Size = UDim2.new(0, 400, 0, 50)
-        bb.StudsOffset = Vector3.new(0, -5, 0) -- Un peu plus bas sous les pieds 
+        bb.Size = UDim2.new(0, 200, 0, 100)
         bb.AlwaysOnTop = true
-        bb.MaxDistance = 500 -- Augmenté pour voir de loin 
-        bb.Enabled = ItemESP_Enabled
+        bb.StudsOffset = Vector3.new(0, 3, 0) -- On le met AU DESSUS de la tête pour être sûr de le voir
         bb.Parent = hrp
-
-        local cont = Instance.new("Frame")
+        
+        local cont = Instance.new("Frame", bb)
         cont.Name = "EspContainer"
-        cont.Size = UDim2.new(1,0,1,0)
+        cont.Size = UDim2.new(1, 0, 1, 0)
         cont.BackgroundTransparency = 1
-        cont.Parent = bb [cite: 9]
 
         BillboardCache[player] = bb
-        updateESP(player)
-
-        table.insert(conns, char.ChildAdded:Connect(function() task.wait(0.1) updateESP(player) end))
-        table.insert(conns, char.ChildRemoved:Connect(function() task.wait(0.1) updateESP(player) end))
         
-        local bp = player:WaitForChild("Backpack", 5) [cite: 10]
-        if bp then
-            table.insert(conns, bp.ChildAdded:Connect(function() updateESP(player) end))
-            table.insert(conns, bp.ChildRemoved:Connect(function() updateESP(player) end))
-        end
+        -- Boucle de rafraîchissement automatique
+        task.spawn(function()
+            while char.Parent and bb.Parent do
+                updateESP(player)
+                task.wait(1) -- Rafraîchit toutes les secondes
+            end
+        end)
     end
 
-    if player.Character then task.spawn(setup) end
-    table.insert(conns, player.CharacterAdded:Connect(function() task.wait(0.5) setup() end))
-    ItemESP_UpdateConnections[player] = conns
+    if player.Character then setup(player.Character) end
+    player.CharacterAdded:Connect(setup)
 end
 
--- Initialisation
-for _, p in ipairs(Players:GetPlayers()) do createBillboard(p) end
-Players.PlayerAdded:Connect(createBillboard)
+-- Lancement
+for _, p in ipairs(Players:GetPlayers()) do createESP(p) end
+Players.PlayerAdded:Connect(createESP)
 
--- Toggle Button
-local sg = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+-- Toggle Simple
+local sg = Instance.new("ScreenGui", LocalPlayer.PlayerGui)
 local btn = Instance.new("TextButton", sg)
-btn.Size = UDim2.new(0, 80, 0, 30)
-btn.Position = UDim2.new(0, 10, 0, 10)
-btn.Text = "ESP ITEMS"
-btn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+btn.Size = UDim2.new(0, 100, 0, 40)
+btn.Position = UDim2.new(0, 10, 0, 50)
+btn.Text = "TOGGLE ESP"
+btn.BackgroundColor3 = Color3.new(0, 0.5, 1)
 
 btn.MouseButton1Click:Connect(function()
     ItemESP_Enabled = not ItemESP_Enabled
-    btn.BackgroundColor3 = ItemESP_Enabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 0, 0)
-    for _, p in ipairs(Players:GetPlayers()) do updateESP(p) end
+    btn.BackgroundColor3 = ItemESP_Enabled and Color3.new(0, 0.5, 1) or Color3.new(1, 0, 0)
 end)
