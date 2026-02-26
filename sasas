@@ -1,209 +1,154 @@
-[cite_start]local Players = game:GetService("Players") [cite: 1]
-[cite_start]local UserInputService = game:GetService("UserInputService") [cite: 1]
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
 
-[cite_start]local LocalPlayer = Players.LocalPlayer [cite: 1]
-[cite_start]local ItemESP_Enabled = true [cite: 1]
+local LocalPlayer = Players.LocalPlayer
+local ItemESP_Enabled = true
 
-[cite_start]local BillboardCache = {} [cite: 1]
-[cite_start]local ItemESP_UpdateConnections = {} [cite: 1]
+local BillboardCache = {}
+local ItemESP_UpdateConnections = {}
 
-[cite_start]local RARITY_COLORS = { [cite: 1]
-    [cite_start]["Common"] = Color3.fromRGB(255, 255, 255), [cite: 1]
-    [cite_start]["Uncommon"] = Color3.fromRGB(99, 255, 52), [cite: 1]
-    [cite_start]["Rare"] = Color3.fromRGB(51, 170, 255), [cite: 1]
-    [cite_start]["Epic"] = Color3.fromRGB(237, 44, 255), [cite: 1]
-    [cite_start]["Legendary"] = Color3.fromRGB(255, 150, 0), [cite: 1]
-    [cite_start]["Omega"] = Color3.fromRGB(255, 20, 51), [cite: 1]
+local RARITY_COLORS = {
+    ["Common"] = Color3.fromRGB(255, 255, 255),
+    ["Uncommon"] = Color3.fromRGB(99, 255, 52),
+    ["Rare"] = Color3.fromRGB(51, 170, 255),
+    ["Epic"] = Color3.fromRGB(237, 44, 255),
+    ["Legendary"] = Color3.fromRGB(255, 150, 0),
+    ["Omega"] = Color3.fromRGB(255, 20, 51),
 }
 
--- Fonction pour extraire le nom réel de l'objet (évite les chiffres)
+-- Tentative de récupération du nom par toutes les méthodes possibles
 local function getToolName(tool)
-    return tool:GetAttribute("ItemName") 
-        or tool:GetAttribute("DisplayName") 
-        or tool.Name
+    local attrName = tool:GetAttribute("ItemName") or tool:GetAttribute("DisplayName") or tool:GetAttribute("Name") [cite: 2]
+    if attrName and tostring(attrName) ~= "" then
+        return tostring(attrName)
+    end
+    
+    -- Si c'est un chiffre, on cherche un StringValue à l'intérieur
+    local nameVal = tool:FindFirstChild("Name") or tool:FindFirstChild("ItemName")
+    if nameVal and nameVal:IsA("StringValue") then
+        return nameVal.Value
+    end
+
+    return tool.Name -- Retour par défaut [cite: 5]
 end
 
-[cite_start]local function getToolColor(tool) [cite: 1]
-    [cite_start]local rarity = tool:GetAttribute("RarityName") [cite: 1]
-               [cite_start]or tool:GetAttribute("Rarity") [cite: 1]
-               [cite_start]or "Common" [cite: 2]
-    [cite_start]return RARITY_COLORS[rarity] or Color3.fromRGB(180, 180, 180) [cite: 2]
+local function getToolColor(tool)
+    local rarity = tool:GetAttribute("RarityName") or tool:GetAttribute("Rarity") or "Common" [cite: 2]
+    return RARITY_COLORS[rarity] or Color3.fromRGB(180, 180, 180)
 end
 
-[cite_start]local function updateESP(player) [cite: 2]
-    [cite_start]local bb = BillboardCache[player] [cite: 2]
-    [cite_start]if not bb then return end [cite: 2]
+local function updateESP(player)
+    local bb = BillboardCache[player]
+    if not bb then return end
 
-    [cite_start]bb.Enabled = ItemESP_Enabled [cite: 2]
+    bb.Enabled = ItemESP_Enabled
+    local container = bb:FindFirstChild("EspContainer")
+    if not container then return end
 
-    [cite_start]local container = bb:FindFirstChild("EspContainer") [cite: 2]
-    [cite_start]if not container then return end [cite: 2]
+    container:ClearAllChildren()
 
-    [cite_start]container:ClearAllChildren() [cite: 2]
+    local layout = Instance.new("UIListLayout")
+    layout.FillDirection = Enum.FillDirection.Horizontal
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    layout.VerticalAlignment = Enum.VerticalAlignment.Center
+    layout.Padding = UDim.new(0, 5)
+    layout.Parent = container [cite: 3]
 
-    [cite_start]local layout = Instance.new("UIListLayout") [cite: 2]
-    [cite_start]layout.FillDirection = Enum.FillDirection.Horizontal [cite: 2]
-    [cite_start]layout.HorizontalAlignment = Enum.HorizontalAlignment.Center [cite: 2]
-    [cite_start]layout.VerticalAlignment = Enum.VerticalAlignment.Center [cite: 2]
-    [cite_start]layout.Padding = UDim.new(0, 5) [cite: 2]
-    [cite_start]layout.Parent = container [cite: 3]
+    local tools = {}
+    local char = player.Character
+    if char then
+        for _, c in ipairs(char:GetChildren()) do
+            if c:IsA("Tool") and c.Name ~= "Fists" then [cite: 3]
+                table.insert(tools, c)
+            end
+        end
+        local bp = player:FindFirstChild("Backpack") [cite: 4]
+        if bp then
+            for _, c in ipairs(bp:GetChildren()) do
+                if c:IsA("Tool") and c.Name ~= "Fists" then [cite: 4]
+                    table.insert(tools, c)
+                end
+            end
+        end
+    end
 
-    [cite_start]local tools = {} [cite: 3]
-    [cite_start]local char = player.Character [cite: 3]
-    [cite_start]if char then [cite: 3]
-        [cite_start]for _, c in ipairs(char:GetChildren()) do [cite: 3]
-            [cite_start]if c:IsA("Tool") and c.Name ~= "Fists" and c.Name ~= "" then [cite: 3]
-                [cite_start]table.insert(tools, c) [cite: 3]
-            [cite_start]end [cite: 3]
-        [cite_start]end [cite: 3]
-     
-        [cite_start]local bp = player:FindFirstChild("Backpack") [cite: 4]
-        [cite_start]if bp then [cite: 4]
-            [cite_start]for _, c in ipairs(bp:GetChildren()) do [cite: 4]
-                [cite_start]if c:IsA("Tool") and c.Name ~= "Fists" and c.Name ~= "" then [cite: 4]
-                    [cite_start]table.insert(tools, c) [cite: 4]
-                [cite_start]end [cite: 4]
-            [cite_start]end [cite: 5]
-        [cite_start]end [cite: 4]
-    [cite_start]end [cite: 4]
+    if #tools == 0 then return end
 
-    [cite_start]if #tools == 0 then return end [cite: 5]
-
-    [cite_start]for _, tool in ipairs(tools) do [cite: 5]
-        [cite_start]local lbl = Instance.new("TextLabel") [cite: 5]
-        [cite_start]lbl.Size = UDim2.new(0, 85, 0, 26) [cite: 5]
-        [cite_start]lbl.BackgroundTransparency = 1 [cite: 5]
-        lbl.Text = getToolName(tool) -- Correction pour afficher le nom et non l'ID
-        [cite_start]lbl.TextColor3 = getToolColor(tool) [cite: 5]
-        [cite_start]lbl.TextScaled = true [cite: 6]
-        lbl.Font = Enum.Font.GothamBold
+    for _, tool in ipairs(tools) do
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(0, 100, 0, 30)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = getToolName(tool)
+        lbl.TextColor3 = getToolColor(tool)
+        lbl.TextScaled = true
+        lbl.Font = Enum.Font.GothamBold [cite: 6]
         lbl.TextStrokeTransparency = 0.5
-        [cite_start]lbl.TextStrokeColor3 = Color3.new(0,0,0) [cite: 6]
-        [cite_start]lbl.TextTransparency = 0.05 [cite: 6]
-        [cite_start]lbl.Parent = container [cite: 6]
-    [cite_start]end [cite: 5]
+        lbl.TextStrokeColor3 = Color3.new(0,0,0)
+        lbl.Parent = container
+    end
 end
 
-[cite_start]local function createBillboard(player) [cite: 6]
-    [cite_start]if player == LocalPlayer or BillboardCache[player] then return end [cite: 6]
+local function createBillboard(player)
+    if player == LocalPlayer or BillboardCache[player] then return end
 
-    [cite_start]local conns = {} [cite: 6]
+    local conns = {}
 
-    [cite_start]local function setup() [cite: 6]
-        [cite_start]local char = player.Character [cite: 6]
-        [cite_start]if not char then return end [cite: 7]
-        [cite_start]local hrp = char:FindFirstChild("HumanoidRootPart") [cite: 7]
-        [cite_start]if not hrp then return end [cite: 7]
+    local function setup()
+        local char = player.Character
+        if not char then return end
+        local hrp = char:WaitForChild("HumanoidRootPart", 5)
+        if not hrp then return end
 
-        [cite_start]if BillboardCache[player] then BillboardCache[player]:Destroy() end [cite: 7]
+        if BillboardCache[player] then BillboardCache[player]:Destroy() end
 
-        [cite_start]local bb = Instance.new("BillboardGui") [cite: 7]
-        [cite_start]bb.Name = "ItemESP" [cite: 7]
-        [cite_start]bb.Adornee = hrp [cite: 7]
-        [cite_start]bb.Size = UDim2.new(0, 320, 0, 32) [cite: 7]
-        [cite_start]bb.StudsOffset = Vector3.new(0, -4.3, 0) [cite: 7, 8]
-        [cite_start]bb.AlwaysOnTop = true [cite: 8]
-        [cite_start]bb.LightInfluence = 0 [cite: 8]
-        [cite_start]bb.MaxDistance = 110 [cite: 8]
-        [cite_start]bb.Enabled = ItemESP_Enabled [cite: 8]
-        [cite_start]bb.Parent = hrp [cite: 8]
+        local bb = Instance.new("BillboardGui")
+        bb.Name = "ItemESP"
+        bb.Adornee = hrp
+        bb.Size = UDim2.new(0, 400, 0, 50)
+        bb.StudsOffset = Vector3.new(0, -5, 0) -- Un peu plus bas sous les pieds 
+        bb.AlwaysOnTop = true
+        bb.MaxDistance = 500 -- Augmenté pour voir de loin 
+        bb.Enabled = ItemESP_Enabled
+        bb.Parent = hrp
 
-        [cite_start]local cont = Instance.new("Frame") [cite: 8]
-        [cite_start]cont.Name = "EspContainer" [cite: 8]
-        [cite_start]cont.Size = UDim2.new(1,0,1,0) [cite: 8]
-        [cite_start]cont.BackgroundTransparency = 1 [cite: 8]
-        [cite_start]cont.Parent = bb [cite: 8, 9]
+        local cont = Instance.new("Frame")
+        cont.Name = "EspContainer"
+        cont.Size = UDim2.new(1,0,1,0)
+        cont.BackgroundTransparency = 1
+        cont.Parent = bb [cite: 9]
 
-        [cite_start]BillboardCache[player] = bb [cite: 9]
+        BillboardCache[player] = bb
+        updateESP(player)
 
-        [cite_start]local upd = function() updateESP(player) end [cite: 9]
-        [cite_start]upd() [cite: 9]
+        table.insert(conns, char.ChildAdded:Connect(function() task.wait(0.1) updateESP(player) end))
+        table.insert(conns, char.ChildRemoved:Connect(function() task.wait(0.1) updateESP(player) end))
+        
+        local bp = player:WaitForChild("Backpack", 5) [cite: 10]
+        if bp then
+            table.insert(conns, bp.ChildAdded:Connect(function() updateESP(player) end))
+            table.insert(conns, bp.ChildRemoved:Connect(function() updateESP(player) end))
+        end
+    end
 
-        [cite_start]if char then [cite: 9]
-            [cite_start]table.insert(conns, char.ChildAdded:Connect(function(c) if c:IsA("Tool") then task.delay(0.1, upd) end end)) [cite: 9]
-            [cite_start]table.insert(conns, char.ChildRemoved:Connect(function(c) if c:IsA("Tool") then task.delay(0.1, upd) end end)) [cite: 9]
-        [cite_start]end [cite: 9]
-
-        [cite_start]local bp = player:FindFirstChild("Backpack") [cite: 9, 10]
-        [cite_start]if bp then [cite: 10]
-            [cite_start]table.insert(conns, bp.ChildAdded:Connect(upd)) [cite: 10]
-            [cite_start]table.insert(conns, bp.ChildRemoved:Connect(upd)) [cite: 10]
-        [cite_start]end [cite: 10]
-    [cite_start]end [cite: 10]
-
-    [cite_start]if player.Character then task.spawn(setup) end [cite: 10]
-    [cite_start]table.insert(conns, player.CharacterAdded:Connect(function() task.wait(0.3) setup() end)) [cite: 10]
-
-    [cite_start]ItemESP_UpdateConnections[player] = conns [cite: 10]
+    if player.Character then task.spawn(setup) end
+    table.insert(conns, player.CharacterAdded:Connect(function() task.wait(0.5) setup() end))
+    ItemESP_UpdateConnections[player] = conns
 end
 
-[cite_start]for _, p in ipairs(Players:GetPlayers()) do [cite: 10]
-    [cite_start]if p ~= LocalPlayer then createBillboard(p) end [cite: 10]
-[cite_start]end [cite: 10]
+-- Initialisation
+for _, p in ipairs(Players:GetPlayers()) do createBillboard(p) end
+Players.PlayerAdded:Connect(createBillboard)
 
-[cite_start]Players.PlayerAdded:Connect(function(p) [cite: 10]
-    [cite_start]if p ~= LocalPlayer then createBillboard(p) end [cite: 10]
-[cite_start]end) [cite: 10]
+-- Toggle Button
+local sg = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+local btn = Instance.new("TextButton", sg)
+btn.Size = UDim2.new(0, 80, 0, 30)
+btn.Position = UDim2.new(0, 10, 0, 10)
+btn.Text = "ESP ITEMS"
+btn.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
 
-[cite_start]Players.PlayerRemoving:Connect(function(p) [cite: 10]
-    [cite_start]if BillboardCache[p] then BillboardCache[p]:Destroy() BillboardCache[p] = nil end [cite: 11]
-    [cite_start]if ItemESP_UpdateConnections[p] then [cite: 11]
-        [cite_start]for _, c in pairs(ItemESP_UpdateConnections[p]) do if c.Connected then c:Disconnect() end end [cite: 11]
-        [cite_start]ItemESP_UpdateConnections[p] = nil [cite: 11]
-    [cite_start]end [cite: 11]
-[cite_start]end) [cite: 11]
-
-[cite_start]local sg = Instance.new("ScreenGui") [cite: 11]
-[cite_start]sg.Name = "ItemESP_Toggle" [cite: 11]
-[cite_start]sg.ResetOnSpawn = false [cite: 11]
-[cite_start]sg.Parent = LocalPlayer:WaitForChild("PlayerGui") [cite: 11]
-
-[cite_start]local frame = Instance.new("Frame", sg) [cite: 11]
-[cite_start]frame.Size = UDim2.new(0, 75, 0, 28) [cite: 11]
-[cite_start]frame.Position = UDim2.new(0.01, 0, 0.01, 0) [cite: 11]
-[cite_start]frame.BackgroundColor3 = Color3.fromRGB(22, 22, 22) [cite: 11]
-[cite_start]frame.BorderSizePixel = 0 [cite: 11]
-
-[cite_start]Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 5) [cite: 11]
-
-[cite_start]local btn = Instance.new("TextButton", frame) [cite: 11]
-[cite_start]btn.Size = UDim2.new(1, -4, 1, -4) [cite: 11]
-[cite_start]btn.Position = UDim2.new(0, 2, 0, 2) [cite: 11]
-[cite_start]btn.BackgroundColor3 = Color3.fromRGB(0, 120, 0) [cite: 11, 12]
-[cite_start]btn.Text = "Items" [cite: 12]
-[cite_start]btn.TextColor3 = Color3.new(1,1,1) [cite: 12]
-[cite_start]btn.TextScaled = true [cite: 12]
-[cite_start]btn.Font = Enum.Font.Gotham [cite: 12]
-[cite_start]btn.BorderSizePixel = 0 [cite: 12]
-
-[cite_start]Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4) [cite: 12]
-
-[cite_start]local dragging, dragStart, startPos = false, nil, nil [cite: 12]
-
-[cite_start]frame.InputBegan:Connect(function(inp) [cite: 12]
-    [cite_start]if inp.UserInputType == Enum.UserInputType.MouseButton1 then [cite: 12]
-        [cite_start]dragging = true [cite: 12]
-        [cite_start]dragStart = inp.Position [cite: 12]
-        [cite_start]startPos = frame.Position [cite: 12]
-        [cite_start]inp.Changed:Connect(function() [cite: 12]
-            [cite_start]if inp.UserInputState == Enum.UserInputState.End then dragging = false end [cite: 12]
-        [cite_start]end) [cite: 12]
-    [cite_start]end [cite: 12]
-[cite_start]end) [cite: 12]
-
-[cite_start]UserInputService.InputChanged:Connect(function(inp) [cite: 12]
-    [cite_start]if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then [cite: 13]
-        [cite_start]local delta = inp.Position - dragStart [cite: 13]
-        [cite_start]frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y) [cite: 13]
-    [cite_start]end [cite: 13]
-[cite_start]end) [cite: 13]
-
-[cite_start]btn.MouseButton1Click:Connect(function() [cite: 13]
-    [cite_start]ItemESP_Enabled = not ItemESP_Enabled [cite: 13]
-    [cite_start]btn.BackgroundColor3 = ItemESP_Enabled and Color3.fromRGB(0,120,0) or Color3.fromRGB(120,0,0) [cite: 13]
-    [cite_start]for _, p in ipairs(Players:GetPlayers()) do [cite: 13]
-        [cite_start]if p ~= LocalPlayer then updateESP(p) end [cite: 13]
-    [cite_start]end [cite: 13]
-[cite_start]end) [cite: 13]
-
-print("Item ESP (Noms Fixés) - OK")
+btn.MouseButton1Click:Connect(function()
+    ItemESP_Enabled = not ItemESP_Enabled
+    btn.BackgroundColor3 = ItemESP_Enabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 0, 0)
+    for _, p in ipairs(Players:GetPlayers()) do updateESP(p) end
+end)
