@@ -1,9 +1,9 @@
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local LP = Players.LocalPlayer
 local Enabled = true
 local Cache = {}
 
+-- Couleurs de rareté 
 local COLORS = {
     Common = Color3.fromRGB(255, 255, 255),
     Uncommon = Color3.fromRGB(99, 255, 52),
@@ -13,15 +13,11 @@ local COLORS = {
     Omega = Color3.fromRGB(255, 20, 51)
 }
 
-local function GetName(t)
-    local a = t:GetAttribute("ItemName") or t:GetAttribute("DisplayName")
-    if a and tostring(a) ~= "" and not tonumber(tostring(a)) then 
-        return tostring(a) 
-    end
-    if tonumber(t.Name) then
-        local v = t:FindFirstChild("Name") or t:FindFirstChild("ItemName")
-        if v and v:IsA("StringValue") then return v.Value end
-        return "Objet"
+-- Fonction pour obtenir le nom réel au lieu du chiffre 
+local function GetRealName(t)
+    local attr = t:GetAttribute("ItemName") or t:GetAttribute("DisplayName")
+    if attr and tostring(attr) ~= "" and not tonumber(tostring(attr)) then 
+        return tostring(attr) 
     end
     return t.Name
 end
@@ -56,7 +52,7 @@ local function Update(p)
         local txt = Instance.new("TextLabel", c)
         txt.Size = UDim2.new(0, 90, 0, 25)
         txt.BackgroundTransparency = 1
-        txt.Text = GetName(t)
+        txt.Text = GetRealName(t) -- Affiche le vrai nom 
         local r = t:GetAttribute("RarityName") or t:GetAttribute("Rarity") or "Common"
         txt.TextColor3 = COLORS[r] or Color3.new(1,1,1)
         txt.Font = Enum.Font.GothamBold
@@ -74,7 +70,7 @@ local function Create(p)
         local b = Instance.new("BillboardGui", hrp)
         b.Name = "ItemESP"
         b.Size = UDim2.new(0, 300, 0, 40)
-        b.StudsOffset = Vector3.new(0, -4.5, 0)
+        b.StudsOffset = Vector3.new(0, -4.5, 0) -- Position sous les pieds [cite: 7]
         b.AlwaysOnTop = true
         local c = Instance.new("Frame", b)
         c.Name = "Container"
@@ -95,6 +91,7 @@ end
 for _, p in ipairs(Players:GetPlayers()) do Create(p) end
 Players.PlayerAdded:Connect(Create)
 
+-- Interface Toggle [cite: 12]
 local sg = Instance.new("ScreenGui", LP.PlayerGui)
 local btn = Instance.new("TextButton", sg)
 btn.Size = UDim2.new(0, 80, 0, 30)
