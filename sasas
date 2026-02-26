@@ -1,137 +1,202 @@
--- Silent Aim BlockSpin FIXÉ POUR XENO (HookMetamethod Universel + HRP Pred)
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
 local LocalPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
+local ItemESP_Enabled = true
 
-local SilentAimEnabled = true
-local FOV = 150
+local BillboardCache = {}
+local ItemESP_UpdateConnections = {}
 
-local GunNames = {
-    "P226","MP5","M24","Draco","Glock","Sawnoff","Uzi","G3","C9",
-    "Hunting Rifle","Anaconda","AK47","Remington","Double Barrel"
+local RARITY_COLORS = {
+    ["Common"] = Color3.fromRGB(255, 255, 255),
+    ["Uncommon"] = Color3.fromRGB(99, 255, 52),
+    ["Rare"] = Color3.fromRGB(51, 170, 255),
+    ["Epic"] = Color3.fromRGB(237, 44, 255),
+    ["Legendary"] = Color3.fromRGB(255, 150, 0),
+    ["Omega"] = Color3.fromRGB(255, 20, 51),
 }
-local GunLookup = {}
-for _, name in pairs(GunNames) do GunLookup[name] = true end
 
--- FOV + Tracer
-local fovCircle = Drawing.new("Circle")
-fovCircle.Color = Color3.new(1,1,1)
-fovCircle.Thickness = 2
-fovCircle.NumSides = 100
-fovCircle.Radius = FOV
-fovCircle.Filled = false
-fovCircle.Visible = true
-fovCircle.Transparency = 1
+local function getToolColor(tool)
+    local rarity = tool:GetAttribute("RarityName") 
+               or tool:GetAttribute("Rarity") 
+               or "Common"
+    return RARITY_COLORS[rarity] or Color3.fromRGB(180, 180, 180)
+end
 
-local tracerLine = Drawing.new("Line")
-tracerLine.Color = Color3.new(1,0,0)
-tracerLine.Thickness = 2
-tracerLine.Visible = false
-tracerLine.Transparency = 1
+local function updateESP(player)
+    local bb = BillboardCache[player]
+    if not bb then return end
 
--- Fonctions (GetClosest, Predict, IsGun)
-local function GetClosestTarget()
-    local closest, shortest = nil, math.huge
-    local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            local root = player.Character.HumanoidRootPart
-            local screenPos, onScreen = Camera:WorldToViewportPoint(root.Position)
-            if onScreen then
-                local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
-                if dist < FOV and dist < shortest then
-                    shortest = dist
-                    closest = player
+    bb.Enabled = ItemESP_Enabled
+
+    local container = bb:FindFirstChild("EspContainer")
+    if not container then return end
+
+    container:ClearAllChildren()
+
+    local layout = Instance.new("UIListLayout")
+    layout.FillDirection = Enum.FillDirection.Horizontal
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    layout.VerticalAlignment = Enum.VerticalAlignment.Center
+    layout.Padding = UDim.new(0, 5)
+    layout.Parent = container
+
+    local tools = {}
+    local char = player.Character
+    if char then
+        for _, c in ipairs(char:GetChildren()) do
+            if c:IsA("Tool") and c.Name ~= "Fists" and c.Name ~= "" then
+                table.insert(tools, c)
+            end
+        end
+        local bp = player:FindFirstChild("Backpack")
+        if bp then
+            for _, c in ipairs(bp:GetChildren()) do
+                if c:IsA("Tool") and c.Name ~= "Fists" and c.Name ~= "" then
+                    table.insert(tools, c)
                 end
             end
         end
     end
-    return closest
-end
 
-local function PredictPosition(rootPart)
-    if not rootPart then return Vector3.new(0,0,0) end
-    local velocity = rootPart.Velocity
-    local prediction = rootPart.Position + (velocity * 0.165)
-    local seat = rootPart:FindFirstChildWhichIsA("WeldConstraint") or rootPart:FindFirstChildWhichIsA("Weld")
-    if seat and seat.Part0 then
-        prediction = rootPart.Position + (seat.Part0.Velocity * 0.165 * 1.2)
+    if #tools == 0 then return end
+
+    for _, tool in ipairs(tools) do
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(0, 85, 0, 26)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = tool.Name
+        lbl.TextColor3 = getToolColor(tool)
+        lbl.TextScaled = true
+        lbl.Font = Enum.Font.Gotham
+        lbl.TextStrokeTransparency = 0.65
+        lbl.TextStrokeColor3 = Color3.new(0,0,0)
+        lbl.TextTransparency = 0.05
+        lbl.Parent = container
     end
-    return prediction
 end
 
-local function IsHoldingAllowedGun(args)
-    local ok, weapon = pcall(function() return args[3] end)
-    if ok and typeof(weapon) == "Instance" and GunLookup[weapon.Name] then return true end
-    if LocalPlayer.Character then
-        for _, child in pairs(LocalPlayer.Character:GetChildren()) do
-            if (child:IsA("Tool") or child:IsA("Model")) and GunLookup[child.Name] then
-                return true
-            end
+local function createBillboard(player)
+    if player == LocalPlayer or BillboardCache[player] then return end
+
+    local conns = {}
+
+    local function setup()
+        local char = player.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        if BillboardCache[player] then BillboardCache[player]:Destroy() end
+
+        local bb = Instance.new("BillboardGui")
+        bb.Name = "ItemESP"
+        bb.Adornee = hrp
+        bb.Size = UDim2.new(0, 320, 0, 32)
+        bb.StudsOffset = Vector3.new(0, -4.3, 0)
+        bb.AlwaysOnTop = true
+        bb.LightInfluence = 0
+        bb.MaxDistance = 110
+        bb.Enabled = ItemESP_Enabled
+        bb.Parent = hrp
+
+        local cont = Instance.new("Frame")
+        cont.Name = "EspContainer"
+        cont.Size = UDim2.new(1,0,1,0)
+        cont.BackgroundTransparency = 1
+        cont.Parent = bb
+
+        BillboardCache[player] = bb
+
+        local upd = function() updateESP(player) end
+        upd()
+
+        if char then
+            table.insert(conns, char.ChildAdded:Connect(function(c) if c:IsA("Tool") then task.delay(0.1, upd) end end))
+            table.insert(conns, char.ChildRemoved:Connect(function(c) if c:IsA("Tool") then task.delay(0.1, upd) end end))
+        end
+
+        local bp = player:FindFirstChild("Backpack")
+        if bp then
+            table.insert(conns, bp.ChildAdded:Connect(upd))
+            table.insert(conns, bp.ChildRemoved:Connect(upd))
         end
     end
-    return false
+
+    if player.Character then task.spawn(setup) end
+    table.insert(conns, player.CharacterAdded:Connect(function() task.wait(0.3) setup() end))
+
+    ItemESP_UpdateConnections[player] = conns
 end
 
--- Position initiale + Boucle (marche direct)
-local function updateFOV()
-    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    fovCircle.Position = center
-    fovCircle.Radius = FOV
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer then createBillboard(p) end
 end
-updateFOV()
 
-RunService.RenderStepped:Connect(function()
-    updateFOV()
-    local target = GetClosestTarget()
-    if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-        local predPos = PredictPosition(target.Character.HumanoidRootPart)
-        local screenPos, onScreen = Camera:WorldToViewportPoint(predPos)
-        if onScreen then
-            local ourHead = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head")
-            if ourHead then
-                local screenStart = Camera:WorldToViewportPoint(ourHead.Position)
-                tracerLine.From = Vector2.new(screenStart.X, screenStart.Y)
-                tracerLine.To = Vector2.new(screenPos.X, screenPos.Y)
-                tracerLine.Visible = true
-                return
-            end
-        end
-    end
-    tracerLine.Visible = false
+Players.PlayerAdded:Connect(function(p)
+    if p ~= LocalPlayer then createBillboard(p) end
 end)
 
--- 🔥 SILENT AIM HOOKMETAMETHOD (UNIVERSAL - MARCHE SUR XENO/BLOCKSPIN)
-if hookmetamethod then
-    local mt = getrawmetatable(game)
-    local oldNamecall = mt.__namecall
-    setreadonly(mt, false)
-    mt.__namecall = newcclosure(function(self, ...)
-        local args = {...}
-        local method = getnamecallmethod()
-        
-        if SilentAimEnabled and method == "FireServer" and not checkcaller() and IsHoldingAllowedGun(args) then
-            local target = GetClosestTarget()
-            if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-                local root = target.Character.HumanoidRootPart
-                local aimPos = PredictPosition(root)
-                
-                -- Modifie args comme original (BlockSpin format)
-                args[4] = CFrame.new(1/0,1/0,1/0,0/0,0/0,0/0,0/0,0/0,0/0,0/0,0/0,0/0)
-                args[5] = {[1]={[1]={["Instance"]=root, ["Position"]=aimPos}}}
-                
-                print("🔥 SILENT AIM TRIGGER sur " .. target.Name)  -- Debug console F9
-            end
-        end
-        
-        return oldNamecall(self, unpack(args))
-    end)
-    setreadonly(mt, true)
-    print("✅ HOOKMETAMETHOD SILENT AIM ACTIF (Xeno OK !)")
-else
-    warn("❌ hookmetamethod non supporté (mauvais executor ?)")
-end
+Players.PlayerRemoving:Connect(function(p)
+    if BillboardCache[p] then BillboardCache[p]:Destroy() BillboardCache[p] = nil end
+    if ItemESP_UpdateConnections[p] then
+        for _, c in pairs(ItemESP_UpdateConnections[p]) do if c.Connected then c:Disconnect() end end
+        ItemESP_UpdateConnections[p] = nil
+    end
+end)
 
-print("Silent Aim BlockSpin XENO FIXÉ ! FOV + Tracer + Pred HRP") 
+-- Petit bouton toggle
+local sg = Instance.new("ScreenGui")
+sg.Name = "ItemESP_Toggle"
+sg.ResetOnSpawn = false
+sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame", sg)
+frame.Size = UDim2.new(0, 75, 0, 28)
+frame.Position = UDim2.new(0.01, 0, 0.01, 0)
+frame.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+frame.BorderSizePixel = 0
+
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 5)
+
+local btn = Instance.new("TextButton", frame)
+btn.Size = UDim2.new(1, -4, 1, -4)
+btn.Position = UDim2.new(0, 2, 0, 2)
+btn.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
+btn.Text = "Items"
+btn.TextColor3 = Color3.new(1,1,1)
+btn.TextScaled = true
+btn.Font = Enum.Font.Gotham
+btn.BorderSizePixel = 0
+
+Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+
+local dragging, dragStart, startPos = false, nil, nil
+
+frame.InputBegan:Connect(function(inp)
+    if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = inp.Position
+        startPos = frame.Position
+        inp.Changed:Connect(function()
+            if inp.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(inp)
+    if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = inp.Position - dragStart
+        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+btn.MouseButton1Click:Connect(function()
+    ItemESP_Enabled = not ItemESP_Enabled
+    btn.BackgroundColor3 = ItemESP_Enabled and Color3.fromRGB(0,120,0) or Color3.fromRGB(120,0,0)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then updateESP(p) end
+    end
+end)
+
+print("Item ESP sous les pieds - OK avec attribut Rarity")
