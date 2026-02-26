@@ -3,7 +3,19 @@ local LP = Players.LocalPlayer
 local Enabled = true
 local Cache = {}
 
--- Couleurs de rareté pour BlockSpin
+-- Table de correspondance pour BlockSpin (ID vers Nom Réel)
+local WEAPON_NAMES = {
+    ["1"] = "M16",
+    ["2"] = "AK47",
+    ["3"] = "MP5",
+    ["4"] = "Remington",
+    ["5"] = "Crossbow",
+    ["6"] = "RPG",
+    ["7"] = "Tactical Shovel",
+    ["8"] = "Tactical Axe",
+    -- Le script cherchera aussi dynamiquement si l'ID n'est pas ici
+}
+
 local COLORS = {
     Common = Color3.fromRGB(255, 255, 255),
     Uncommon = Color3.fromRGB(99, 255, 52),
@@ -13,27 +25,26 @@ local COLORS = {
     Omega = Color3.fromRGB(255, 20, 51)
 }
 
--- FONCTION CRUCIALE : Récupère le nom réel (AK, RPG, etc.)
 local function GetRealName(t)
-    -- 1. Cherche dans les attributs (méthode principale de BlockSpin)
-    local attr = t:GetAttribute("ItemName") or t:GetAttribute("DisplayName") or t:GetAttribute("WeaponName")
+    -- 1. Vérification dans la table de traduction (si le nom est un ID)
+    if WEAPON_NAMES[t.Name] then 
+        return WEAPON_NAMES[t.Name] 
+    end
+
+    -- 2. Vérification des attributs du jeu
+    local attr = t:GetAttribute("ItemName") or t:GetAttribute("DisplayName")
     if attr and tostring(attr) ~= "" and not tonumber(tostring(attr)) then 
         return tostring(attr) 
     end
 
-    -- 2. Cherche une StringValue appelée "Name" à l'intérieur de l'outil
-    local nameObj = t:FindFirstChild("Name") or t:FindFirstChild("WeaponName")
-    if nameObj and nameObj:IsA("StringValue") and nameObj.Value ~= "" then
-        return nameObj.Value
+    -- 3. Recherche d'une valeur texte interne
+    local val = t:FindFirstChild("Name") or t:FindFirstChild("WeaponName")
+    if val and val:IsA("StringValue") and val.Value ~= "" then
+        return val.Value
     end
 
-    -- 3. Si c'est toujours un chiffre, on nettoie le nom de l'outil
-    local n = t.Name
-    if tonumber(n) then
-        return "Arme ("..n..")" -- Affiche l'ID seulement si rien d'autre n'est trouvé
-    end
-    
-    return n
+    -- 4. Retour par défaut (on évite d'afficher juste un chiffre si possible)
+    return (tonumber(t.Name) and "Arme " .. t.Name) or t.Name
 end
 
 local function Update(p)
@@ -64,9 +75,9 @@ local function Update(p)
     b.Enabled = Enabled and (#items > 0)
     for _, t in ipairs(items) do
         local txt = Instance.new("TextLabel", c)
-        txt.Size = UDim2.new(0, 100, 0, 30)
+        txt.Size = UDim2.new(0, 110, 0, 30)
         txt.BackgroundTransparency = 1
-        txt.Text = GetRealName(t) -- UTILISE LE NOM RÉEL ICI
+        txt.Text = GetRealName(t)
         
         local r = t:GetAttribute("RarityName") or t:GetAttribute("Rarity") or "Common"
         txt.TextColor3 = COLORS[r] or Color3.new(1,1,1)
@@ -84,9 +95,9 @@ local function Create(p)
         if Cache[p] then Cache[p]:Destroy() end
         
         local b = Instance.new("BillboardGui", hrp)
-        b.Name = "ItemESP"
-        b.Size = UDim2.new(0, 300, 0, 40)
-        b.StudsOffset = Vector3.new(0, -4.5, 0) -- BIEN SOUS LES PIEDS
+        b.Name = "BlockSpinESP"
+        b.Size = UDim2.new(0, 400, 0, 50)
+        b.StudsOffset = Vector3.new(0, -4.5, 0) -- Sous les pieds
         b.AlwaysOnTop = true
         
         local c = Instance.new("Frame", b)
@@ -98,7 +109,7 @@ local function Create(p)
         task.spawn(function()
             while char.Parent and b.Parent do
                 Update(p)
-                task.wait(1.5)
+                task.wait(1.2)
             end
         end)
     end
@@ -109,7 +120,6 @@ end
 for _, p in ipairs(Players:GetPlayers()) do Create(p) end
 Players.PlayerAdded:Connect(Create)
 
--- Bouton Toggle
 local sg = Instance.new("ScreenGui", LP.PlayerGui)
 local btn = Instance.new("TextButton", sg)
 btn.Size = UDim2.new(0, 100, 0, 35)
@@ -122,3 +132,5 @@ btn.MouseButton1Click:Connect(function()
     Enabled = not Enabled
     btn.BackgroundColor3 = Enabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(150, 0, 0)
 end)
+
+print("ESP BlockSpin : Noms d'armes activés.")
