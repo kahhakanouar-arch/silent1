@@ -1,164 +1,157 @@
--- === DROP WEAPONS ONLY ESP (GOLD) - FIX BUG MAIN ÉQUIPÉE ===
--- Seulement armes droppées au sol (pas en main de joueur)
--- GOLD pour tout | Toggle: INSERT | Auto Pickup: RIGHT SHIFT
--- Moins de lag : scan workspace:GetChildren() + check précis
+-- === DROP WEAPONS ONLY ESP GOLD - DEBUG MODE 2026 ===
+-- Ouvre F9 (console) pour voir TOUS les messages !
+-- Si rien en F9 → script pas injecté correctement ou executor buggé
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
-local LocalPlayer = Players.LocalPlayer
+local LocalPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
 
-local GOLD_COLOR = Color3.fromRGB(255, 215, 0)  -- Or Legendary
+local GOLD = Color3.fromRGB(255, 215, 0)
 
-local ESP_ENABLED = true
-local AUTO_PICKUP = false
-local MAX_DIST = 302
-local ESPs = {}
+local ENABLED = true
+local MAX_DIST = 350
+local ESP_TABLE = {}
 
--- Mots pour armes (ajoute si besoin nouveaux drops)
-local WEAPON_KEYWORDS = {"ak", "ak47", "mp5", "rpg", "remi", "remington", "draco", "tact", "axe", "crossbow", "revolver", "glock", "db", "plasma"}
+-- Mots armes (ajoute si tu vois d'autres noms en F9)
+local WEAPON_WORDS = {"ak", "mp5", "rpg", "remi", "remington", "draco", "glock", "axe", "tactical", "crossbow", "revolver", "db", "plasma", "p226"}
+
+print("")
+print(")
 
 local function isDroppedWeapon(obj)
     if not obj then return false end
+    local lowerName = obj.Name:lower()
     
-    local nameLower = obj.Name:lower()
-    
-    -- Doit matcher un mot-clé arme
-    local isWeaponName = false
-    for _, kw in ipairs(WEAPON_KEYWORDS) do
-        if nameLower:find(kw) then
-            isWeaponName = true
+    -- Check mot-clé arme
+    local match = false
+    for _, word in ipairs(WEAPON_WORDS) do
+        if lowerName:find(word) then
+            match = true
             break
         end
     end
-    if not isWeaponName then return false end
+    if not match then return false end
     
-    -- Pas dans un joueur (pas dans Character)
-    if obj:IsDescendantOf(LocalPlayer.Character) or obj:FindFirstAncestorWhichIsA("Model") and obj:FindFirstAncestorWhichIsA("Model"):FindFirstChildOfClass("Humanoid") then
-        return false
-    end
+    -- Pas dans un joueur/character
+    if obj:IsDescendantOf(game.Players) then return false end
+    local ancestor = obj:FindFirstAncestorWhichIsA("Model")
+    if ancestor and ancestor:FindFirstChildOfClass("Humanoid") then return false end
     
-    -- Pas de Humanoid (exclut joueurs vivants)
-    if obj:FindFirstChildOfClass("Humanoid") or obj.Parent:FindFirstChildOfClass("Humanoid") then
-        return false
-    end
-    
-    -- Doit être Tool ou Model avec Handle/PrimaryPart
+    -- Doit avoir Handle ou PrimaryPart
     if obj:IsA("Tool") or (obj:IsA("Model") and (obj:FindFirstChild("Handle") or obj.PrimaryPart)) then
         return true
     end
-    
     return false
 end
 
-local function createESP(item)
-    if ESPs[item] then return end
+local function addESP(item)
+    if ESP_TABLE[item] then return end
     
-    local targetPart = item:FindFirstChild("Handle") or item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart")
-    if not targetPart then return end
+    local part = item:FindFirstChild("Handle") or item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart")
+    if not part then 
+        print("Item sans Handle/Part: " .. item.Name .. " → ignoré")
+        return 
+    end
     
-    print("🔥 DROP ARME DÉTECTÉE: " .. item.Name .. " → GOLD ESP créé !")
+    print("+++ DROP TROUVÉ: " .. item:GetFullName() .. " | Position OK → ESP GOLD ajouté !")
     
-    local highlight = Instance.new("Highlight")
-    highlight.FillColor = GOLD_COLOR
-    highlight.OutlineColor = GOLD_COLOR
-    highlight.FillTransparency = 0.35
-    highlight.OutlineTransparency = 0
-    highlight.Parent = item
+    local hl = Instance.new("Highlight", item)
+    hl.FillColor = GOLD
+    hl.OutlineColor = GOLD
+    hl.FillTransparency = 0.4
+    hl.OutlineTransparency = 0
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     
-    local bill = Instance.new("BillboardGui")
-    bill.Adornee = targetPart
-    bill.Size = UDim2.new(0, 220, 0, 50)
-    bill.StudsOffset = Vector3.new(0, 3.5, 0)
+    local bill = Instance.new("BillboardGui", part)
+    bill.Name = "DropESP"
+    bill.Adornee = part
+    bill.Size = UDim2.new(0, 180, 0, 40)
+    bill.StudsOffset = Vector3.new(0, 3, 0)
     bill.AlwaysOnTop = true
-    bill.Parent = targetPart
     
-    local frame = Instance.new("Frame", bill)
-    frame.Size = UDim2.new(1,0,1,0)
-    frame.BackgroundColor3 = Color3.new(0,0,0)
-    frame.BackgroundTransparency = 0.45
+    local txt = Instance.new("TextLabel", bill)
+    txt.Size = UDim2.new(1,0,1,0)
+    txt.BackgroundTransparency = 0.6
+    txt.BackgroundColor3 = Color3.new(0,0,0)
+    txt.Text = item.Name .. " [DROP]"
+    txt.TextColor3 = GOLD
+    txt.TextScaled = true
+    txt.Font = Enum.Font.GothamBold
     
-    local uc = Instance.new("UICorner", frame)
-    uc.CornerRadius = UDim.new(0,6)
-    
-    local lbl = Instance.new("TextLabel", frame)
-    lbl.Size = UDim2.new(1,0,1,0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = item.Name .. " [DROP]"
-    lbl.TextColor3 = GOLD_COLOR
-    lbl.TextScaled = true
-    lbl.Font = Enum.Font.GothamBold
-    
-    ESPs[item] = {hl = highlight, bill = bill}
+    ESP_TABLE[item] = {highlight = hl, gui = bill}
 end
 
 local function removeESP(item)
-    if ESPs[item] then
-        if ESPs[item].hl then ESPs[item].hl:Destroy() end
-        if ESPs[item].bill then ESPs[item].bill:Destroy() end
-        ESPs[item] = nil
+    if ESP_TABLE[item] then
+        ESP_TABLE[item].highlight:Destroy()
+        ESP_TABLE[item].gui:Destroy()
+        ESP_TABLE[item] = nil
+        print("--- ESP supprimé: " .. item.Name)
     end
 end
 
-local function scanDrops()
-    if not ESP_ENABLED then return end
-    if not LocalPlayer.Character or not LocalPlayer.Character.PrimaryPart then return end
+local function scanLoop()
+    if not ENABLED then return end
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
     
-    local lpPos = LocalPlayer.Character.PrimaryPart.Position
+    local rootPos = LocalPlayer.Character.HumanoidRootPart.Position
     
-    for _, obj in ipairs(workspace:GetChildren()) do  -- GetChildren() plus rapide que GetDescendants()
-        if isDroppedWeapon(obj) then
-            local part = obj:FindFirstChild("Handle") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
-            if part then
-                local dist = (lpPos - part.Position).Magnitude
-                if dist <= MAX_DIST then
-                    createESP(obj)
-                else
-                    removeESP(obj)
+    -- Scan descendants mais limité aux folders probables
+    local candidates = {}
+    for _, child in ipairs(workspace:GetChildren()) do
+        if child:IsA("Folder") or child.Name:lower():find("drop") or child.Name:lower():find("item") or child.Name == "Map" then
+            for _, sub in ipairs(child:GetDescendants()) do
+                if isDroppedWeapon(sub) then
+                    table.insert(candidates, sub)
                 end
             end
-        elseif ESPs[obj] then  -- Cleanup si plus drop
-            removeESP(obj)
+        end
+        if isDroppedWeapon(child) then
+            table.insert(candidates, child)
+        end
+    end
+    
+    print("Scan: " .. #candidates .. " candidats potentiels trouvés ce tick")
+    
+    for _, obj in ipairs(candidates) do
+        local part = obj:FindFirstChild("Handle") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+        if part then
+            local dist = (rootPos - part.Position).Magnitude
+            if dist <= MAX_DIST then
+                addESP(obj)
+            else
+                removeESP(obj)
+            end
+        end
+    end
+    
+    -- Cleanup disparus
+    for item, _ in pairs(ESP_TABLE) do
+        if not item.Parent then
+            removeESP(item)
         end
     end
 end
 
-RunService.Heartbeat:Connect(scanDrops)
+RunService.Heartbeat:Connect(scanLoop)
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
+UserInputService.InputBegan:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.Insert then
-        ESP_ENABLED = not ESP_ENABLED
-        print("DROP WEAPONS ESP: " .. (ESP_ENABLED and "ON (GOLD)" or "OFF"))
-        if not ESP_ENABLED then
-            for item,_ in pairs(ESPs) do removeESP(item) end
+        ENABLED = not ENABLED
+        print("ESP DROP: " .. (ENABLED and "ACTIVÉ (gold)" or "DÉSACTIVÉ"))
+        if not ENABLED then
+            for item,_ in pairs(ESP_TABLE) do removeESP(item) end
         end
-    elseif input.KeyCode == Enum.KeyCode.RightShift then
-        AUTO_PICKUP = not AUTO_PICKUP
-        print("AUTO PICKUP DROPS: " .. (AUTO_PICKUP and "ON" or "OFF"))
     end
 end)
 
--- Auto pickup simple (fire prompt si proche d'une arme drop)
+-- Pour debug : print workspace structure au démarrage
 spawn(function()
-    while wait(0.2) do
-        if not AUTO_PICKUP or not ESP_ENABLED then continue end
-        for _, obj in ipairs(workspace:GetChildren()) do
-            if isDroppedWeapon(obj) then
-                local prompt = obj:FindFirstChildOfClass("ProximityPrompt") or obj:FindFirstChildWhichIsA("ProximityPrompt", true)
-                if prompt then
-                    local dist = (LocalPlayer.Character.PrimaryPart.Position - prompt.Parent.Position).Magnitude
-                    if dist < 12 then
-                        fireproximityprompt(prompt)
-                        print("AUTO PICKUP: " .. obj.Name)
-                    end
-                end
-            end
-        end
+    wait(3)
+    print("Debug workspace enfants principaux:")
+    for _, c in ipairs(workspace:GetChildren()) do
+        print(" - " .. c.Name .. " (" .. c.ClassName .. ")")
     end
 end)
-
-print("=== DROP WEAPONS ONLY ESP (GOLD) - FIXED BUG MAIN ===")
-print("Seulement armes au sol (pas équipées) | INSERT pour toggle | RIGHT SHIFT auto pickup")
-print("Regarde F9 pour voir les détections quand tu drop une arme !")
