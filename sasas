@@ -13,7 +13,7 @@ local GOLD_COLOR = Color3.fromRGB(255, 215, 0)  -- Or Legendary
 
 local ESP_ENABLED = true
 local AUTO_PICKUP = false
-local MAX_DIST = 300
+local MAX_DIST = 302
 local ESPs = {}
 
 -- Mots pour armes (ajoute si besoin nouveaux drops)
