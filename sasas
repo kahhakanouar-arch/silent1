@@ -1,7 +1,8 @@
--- === DROP WEAPONS ESP ULTIME POUR BLOCK SPIN (FIX 2026) ===
--- DÉTECTE : ProximityPrompts (pickups), Tools, NOMS D'ARMES (AK, MP5, RPG...)
+-- === DROP WEAPONS ESP ULTIME POUR BLOCK SPIN (LÉGENDAIRES EN GOLD) ===
+-- SEULEMENT LES ARMES (pas de cash/money)
+-- Toutes les armes détectées en GOLD (comme Legendary)
 -- Toggle: INSERT | Auto Pickup: RIGHT SHIFT
--- Couleurs par nom arme ! Distance: 300 studs
+-- Distance: 300 studs
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -9,65 +10,51 @@ local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 
--- === SYSTÈME DE COULEURS (ajusté pour armes) ===
-local WEAPON_COLORS = {
-    ["ak"] = Color3.fromRGB(51, 170, 255),      -- Rare bleu
-    ["mp5"] = Color3.fromRGB(99, 255, 52),      -- Uncommon vert
-    ["rpg"] = Color3.fromRGB(255, 20, 51),      -- Omega rouge
-    ["remi"] = Color3.fromRGB(237, 44, 255),    -- Epic violet
-    ["draco"] = Color3.fromRGB(255, 150, 0),    -- Legendary orange
-    ["cash"] = Color3.fromRGB(0, 255, 0),       -- Cash vert
-}
-local RARITY_COLORS = {
-    ["Common"] = Color3.fromRGB(255, 255, 255),
-    ["Uncommon"] = Color3.fromRGB(99, 255, 52),
-    ["Rare"] = Color3.fromRGB(51, 170, 255),
-    ["Epic"] = Color3.fromRGB(237, 44, 255),
-    ["Legendary"] = Color3.fromRGB(255, 150, 0),
-    ["Omega"] = Color3.fromRGB(255, 20, 51),
-}
+-- COULEUR GOLD POUR TOUTES LES ARMES (LÉGENDAIRE STYLE)
+local LEGENDARY_GOLD = Color3.fromRGB(255, 215, 0)  -- Or pur !
 
 local ESP_ENABLED = true
 local AUTO_PICKUP = false
 local MAX_DIST = 300
 local ESPs = {}
 
-local WEAPON_NAMES = {"ak", "mp5", "rpg", "remi", "draco", "ak47", "remington", "money", "cash", "dollar"}
+-- Mots-clés pour détecter les armes (AK, MP5, RPG, Remi, Draco, etc.)
+local WEAPON_KEYWORDS = {
+    "ak", "ak47", "mp5", "rpg", "remi", "remington", "draco", "tact", "axe", "tactical axe",
+    "crossbow", "revolver", "glock", "db", "double barrel", "c9", "plasma", "lightsaber"  -- Ajoute si nouveaux
+}
 
-local function getColor(item)
+local function isWeapon(item)
     local name = item.Name:lower()
-    for key, color in pairs(WEAPON_COLORS) do
-        if name:find(key) then
-            return color
+    for _, keyword in pairs(WEAPON_KEYWORDS) do
+        if name:find(keyword) then
+            return true
         end
     end
-    -- Fallback rarity
-    for rarity, _ in pairs(RARITY_COLORS) do
-        if name:find(rarity:lower()) then
-            return RARITY_COLORS[rarity]
-        end
+    -- Si c'est un Tool ou Model avec Handle/PrimaryPart et pas cash/money
+    if (item:IsA("Tool") or item:IsA("Model")) and not name:find("cash") and not name:find("money") and not name:find("dollar") then
+        return true
     end
-    return RARITY_COLORS.Common
+    return false
 end
 
 local function createESP(part)
-    if ESPs[part] then return end  -- Déjà ESP
+    if ESPs[part] then return end
 
-    local color = getColor(part)
-    print("🔥 ESP CRÉÉ POUR: " .. part.Name .. " (couleur: " .. tostring(color) .. ")")  -- DEBUG CONSOLE F9 !
+    print("🔥 ESP CRÉÉ POUR ARME: " .. part.Name .. " (GOLD Legendary)")
 
-    -- Highlight
+    -- Highlight GOLD
     local highlight = Instance.new("Highlight")
-    highlight.Name = "DropESP"
-    highlight.FillColor = color
-    highlight.OutlineColor = color
+    highlight.Name = "WeaponESP"
+    highlight.FillColor = LEGENDARY_GOLD
+    highlight.OutlineColor = LEGENDARY_GOLD
     highlight.FillTransparency = 0.3
     highlight.OutlineTransparency = 0
     highlight.Parent = part
 
-    -- BillBoard
+    -- BillboardGui
     local bill = Instance.new("BillboardGui")
-    bill.Name = "DropESPBill"
+    bill.Name = "WeaponESPBill"
     bill.Adornee = part
     bill.Size = UDim2.new(0, 250, 0, 60)
     bill.StudsOffset = Vector3.new(0, 4, 0)
@@ -85,18 +72,18 @@ local function createESP(part)
     local nameLbl = Instance.new("TextLabel", frame)
     nameLbl.Size = UDim2.new(1,-10,0.6,0)
     nameLbl.Position = UDim2.new(0,5,0,0)
-    nameLbl.BgTransparency = 1
+    nameLbl.BackgroundTransparency = 1
     nameLbl.Text = part.Name
-    nameLbl.TextColor3 = color
+    nameLbl.TextColor3 = LEGENDARY_GOLD
     nameLbl.TextScaled = true
     nameLbl.Font = Enum.Font.GothamBold
 
     local typeLbl = Instance.new("TextLabel", frame)
     typeLbl.Size = UDim2.new(1,-10,0.4,0)
     typeLbl.Position = UDim2.new(0,5,0.6,0)
-    typeLbl.BgTransparency = 1
-    typeLbl.Text = "DROP " .. (AUTO_PICKUP and "[AUTO]" or "")
-    typeLbl.TextColor3 = color
+    typeLbl.BackgroundTransparency = 1
+    typeLbl.Text = "LÉGENDAIRE DROP"
+    typeLbl.TextColor3 = LEGENDARY_GOLD
     typeLbl.TextScaled = true
     typeLbl.Font = Enum.Font.Gotham
 
@@ -112,44 +99,43 @@ local function removeESP(part)
     end
 end
 
-local function scanDrops()
+local function scanWeapons()
     if not ESP_ENABLED then return end
     if not LocalPlayer.Character or not LocalPlayer.Character.PrimaryPart then return end
 
     local lpPos = LocalPlayer.Character.PrimaryPart.Position
     local toCheck = {}
 
-    -- 1. PROXIMITYPROMPTS (pickups ATMs/shops/drops)
+    -- 1. ProximityPrompts (pickups d'armes)
     for _, prompt in pairs(workspace:GetDescendants()) do
         if prompt:IsA("ProximityPrompt") and prompt.Parent:IsA("BasePart") then
             table.insert(toCheck, prompt.Parent)
         end
     end
 
-    -- 2. TOOLS DROPPÉS
+    -- 2. Tools droppés (armes)
     for _, tool in pairs(workspace:GetDescendants()) do
         if tool:IsA("Tool") then
             table.insert(toCheck, tool)
         end
     end
 
-    -- 3. NOMS D'ARMES (Models/Parts)
+    -- 3. Models/Parts avec noms d'armes
     for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") or obj:IsA("BasePart") then
-            local name = obj.Name:lower()
-            for _, wname in pairs(WEAPON_NAMES) do
-                if name:find(wname) then
-                    table.insert(toCheck, obj)
-                    break
-                end
-            end
+        if (obj:IsA("Model") or obj:IsA("BasePart")) and isWeapon(obj) then
+            table.insert(toCheck, obj)
         end
     end
 
-    -- Process
+    -- Process seulement les armes
     for _, part in pairs(toCheck) do
-        if typeof(part) == "Instance" and part.Parent then
-            local pos = (part:IsA("Model") and (part.PrimaryPart or part:FindFirstChild("Handle") or part:FindFirstChildWhichIsA("BasePart")) or part).Position
+        if typeof(part) == "Instance" and part.Parent and isWeapon(part) then
+            local handle = part:IsA("Tool") and part:FindFirstChild("Handle") or 
+                           part.PrimaryPart or part:FindFirstChild("Handle") or 
+                           part:FindFirstChildWhichIsA("BasePart")
+            if not handle then continue end
+
+            local pos = handle.Position
             local dist = (lpPos - pos).Magnitude
 
             if dist <= MAX_DIST then
@@ -160,7 +146,7 @@ local function scanDrops()
         end
     end
 
-    -- Cleanup
+    -- Cleanup auto
     for part, _ in pairs(ESPs) do
         if not part or not part.Parent then
             removeESP(part)
@@ -168,8 +154,8 @@ local function scanDrops()
     end
 end
 
--- Boucle
-RunService.Heartbeat:Connect(scanDrops)
+-- Boucle scan
+RunService.Heartbeat:Connect(scanWeapons)
 
 -- Toggles
 UserInputService.InputBegan:Connect(function(input, gp)
@@ -177,54 +163,37 @@ UserInputService.InputBegan:Connect(function(input, gp)
 
     if input.KeyCode == Enum.KeyCode.Insert then
         ESP_ENABLED = not ESP_ENABLED
-        print("=== DROP ESP " .. (ESP_ENABLED and "ACTIVÉ 🔥" or "DÉSACTIVÉ") .. " ===")
+        print("=== WEAPONS ESP " .. (ESP_ENABLED and "ACTIVÉ 🔥" or "DÉSACTIVÉ") .. " ===")
         if not ESP_ENABLED then
             for part, _ in pairs(ESPs) do removeESP(part) end
         end
     elseif input.KeyCode == Enum.KeyCode.RightShift then
         AUTO_PICKUP = not AUTO_PICKUP
         print("=== AUTO PICKUP " .. (AUTO_PICKUP and "ACTIVÉ 😈" or "DÉSACTIVÉ") .. " ===")
-        -- TODO: Ajoute auto fireproximityprompt si voulu
     end
 end)
 
--- AUTO PICKUP (fire ProximityPrompt proche)
+-- AUTO PICKUP (ramasse auto les armes proches)
 spawn(function()
     while true do
         if AUTO_PICKUP and ESP_ENABLED then
             for _, prompt in pairs(workspace:GetDescendants()) do
                 if prompt:IsA("ProximityPrompt") then
                     local part = prompt.Parent
-                    local dist = (LocalPlayer.Character.PrimaryPart.Position - part.Position).Magnitude
-                    if dist < 10 then  -- Proche
-                        fireproximityprompt(prompt)
+                    if part and isWeapon(part) then
+                        local dist = (LocalPlayer.Character.PrimaryPart.Position - part.Position).Magnitude
+                        if dist < 12 then
+                            fireproximityprompt(prompt)
+                        end
                     end
                 end
             end
         end
-        wait(0.1)
+        wait(0.15)
     end
 end)
 
-print("=== DROP WEAPONS ESP ULTIME CHARGÉ ! ===")
+print("=== WEAPONS ONLY ESP CHARGÉ ! (GOLD Legendary) ===")
 print("INSERT: Toggle ESP | RIGHT SHIFT: Auto Pickup")
-print("Ouvre F9 pour voir détections ! Teste drop AK/MP5/RPG")
-print("Si pas détecté, colle nom en F9 !")
-
-**FIX TOTAL !** 🎯
-
-### Pourquoi maintenant ça marche :
-- **Scan TRIPLE** : ProximityPrompts + Tools + Noms armes (AK, MP5, RPG, Remi, Draco...)
-- **workspace.Map inclus** (Props/ATMs/drops)
-- **PRINT CONSOLE** : F9 → vois exactement ce qui est détecté !
-- **Auto Pickup** : RIGHT SHIFT → ramasse auto tout proche (fireprompt)
-
-**Test** :
-1. Injecte (Delta/Wave)
-2. Drop une arme (ou tue qqn)
-3. **F9** : cherche "ESP CRÉÉ POUR: AK47" 
-4. Si rien → colle le nom exact ici !
-
-**Ajoute armes** : Dans `WEAPON_NAMES` ajoute ex: "ta_nouvelle_arme"
-
-Parfait pour loots RPG/AK/MP5 ! Si bug, F9 info ! 😤
+print("Seulement AK/MP5/RPG/Remi/Draco/etc. en GOLD ! Pas de cash/money")
+print("F9 pour voir les détections. Teste un drop d'arme !")
