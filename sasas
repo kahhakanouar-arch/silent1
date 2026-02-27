@@ -1,1 +1,150 @@
+-- === DROP ITEMS ESP POUR BLOCK SPIN ===
+-- Toggle avec INSERT (on/off)
+-- Couleurs par rareté intégrées !
+-- Distance max: 200 studs (changeable)
+-- Fonctionne sur Delta, Fluxus, Solara, etc.
 
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- === SYSTÈME DE COULEURS ===
+local RARITY_COLORS = {
+    ["Common"] = Color3.fromRGB(255, 255, 255),
+    ["Uncommon"] = Color3.fromRGB(99, 255, 52),
+    ["Rare"] = Color3.fromRGB(51, 170, 255),
+    ["Epic"] = Color3.fromRGB(237, 44, 255),
+    ["Legendary"] = Color3.fromRGB(255, 150, 0),
+    ["Omega"] = Color3.fromRGB(255, 20, 51),
+}
+
+local ESP_ENABLED = true
+local MAX_DIST = 200  -- studs
+local ESPs = {}  -- Pour cleanup
+
+local function getRarity(item)
+    local name = item.Name:lower()
+    for rarity, _ in pairs(RARITY_COLORS) do
+        if name:find(rarity:lower()) then
+            return rarity
+        end
+    end
+    -- Fallback: cherche un StringValue "Rarity" dans l'item (courant dans Roblox)
+    local rarityVal = item:FindFirstChild("Rarity")
+    if rarityVal and rarityVal:IsA("StringValue") then
+        return rarityVal.Value
+    end
+    return "Common"
+end
+
+local function createESP(item)
+    local part = item.PrimaryPart or item:FindFirstChild("Handle") or item:FindFirstChildWhichIsA("BasePart")
+    if not part then return end  -- Pas d'item valide
+
+    local rarity = getRarity(item)
+    local color = RARITY_COLORS[rarity] or RARITY_COLORS.Common
+
+    -- Highlight (glow/outilne)
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor = color
+    highlight.OutlineColor = color
+    highlight.FillTransparency = 0.4
+    highlight.OutlineTransparency = 0
+    highlight.Parent = item
+
+    -- BillboardGui (nom + rareté)
+    local bill = Instance.new("BillboardGui")
+    bill.Name = "ItemESP"
+    bill.Adornee = part
+    bill.Size = UDim2.new(0, 200, 0, 60)
+    bill.StudsOffset = Vector3.new(0, 4, 0)
+    bill.AlwaysOnTop = true
+    bill.LightInfluence = 0
+    bill.Parent = part
+
+    local frame = Instance.new("Frame", bill)
+    frame.Size = UDim2.new(1, 0, 1, 0)
+    frame.BackgroundColor3 = Color3.new(0, 0, 0)
+    frame.BackgroundTransparency = 0.3
+    frame.BorderSizePixel = 0
+
+    local corner = Instance.new("UICorner", frame)
+    corner.CornerRadius = UDim.new(0, 8)
+
+    local nameLabel = Instance.new("TextLabel", frame)
+    nameLabel.Size = UDim2.new(1, -10, 0.5, 0)
+    nameLabel.Position = UDim2.new(0, 5, 0, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = item.Name
+    nameLabel.TextColor3 = color
+    nameLabel.TextScaled = true
+    nameLabel.Font = Enum.Font.GothamBold
+
+    local rarityLabel = Instance.new("TextLabel", frame)
+    rarityLabel.Size = UDim2.new(1, -10, 0.5, 0)
+    rarityLabel.Position = UDim2.new(0, 5, 0.5, 0)
+    rarityLabel.BackgroundTransparency = 1
+    rarityLabel.Text = "[" .. rarity .. "]"
+    rarityLabel.TextColor3 = color
+    rarityLabel.TextScaled = true
+    rarityLabel.Font = Enum.Font.Gotham
+
+    ESPs[item] = {highlight = highlight, bill = bill}
+end
+
+local function removeESP(item)
+    if ESPs[item] then
+        ESPs[item].highlight:Destroy()
+        if ESPs[item].bill then
+            ESPs[item].bill:Destroy()
+        end
+        ESPs[item] = nil
+    end
+end
+
+-- Boucle principale (optimisée)
+local heartbeatConn = RunService.Heartbeat:Connect(function()
+    if not ESP_ENABLED then return end
+    if not LocalPlayer.Character or not LocalPlayer.Character.PrimaryPart then return end
+
+    local lpPos = LocalPlayer.Character.PrimaryPart.Position
+
+    -- Scan workspace (items = Models sans Humanoid)
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj:IsA("Model") and obj ~= LocalPlayer.Character and not obj:FindFirstChildOfClass("Humanoid") and obj.PrimaryPart then
+            local dist = (lpPos - obj.PrimaryPart.Position).Magnitude
+            if dist <= MAX_DIST then
+                if not ESPs[obj] then
+                    createESP(obj)
+                end
+            else
+                removeESP(obj)
+            end
+        else
+            removeESP(obj)  -- Cleanup items invalides
+        end
+    end
+end)
+
+-- Toggle ESP (INSERT)
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.Insert then
+        ESP_ENABLED = not ESP_ENABLED
+        if not ESP_ENABLED then
+            -- Cleanup tout
+            for item, esp in pairs(ESPs) do
+                esp.highlight:Destroy()
+                if esp.bill then esp.bill:Destroy() end
+            end
+            ESPs = {}
+        end
+        print("Drop Items ESP: " .. (ESP_ENABLED and "ON" or "OFF"))
+    end
+end)
+
+print("=== DROP ITEMS ESP BLOCK SPIN LOADED! ===")
+print("Toggle: INSERT | Distance: 200 studs")
+print("Couleurs auto par rareté ! 😈")
