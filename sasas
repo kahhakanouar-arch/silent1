@@ -1,8 +1,7 @@
--- === DROP WEAPONS ESP ULTIME POUR BLOCK SPIN (LÉGENDAIRES EN GOLD) ===
--- SEULEMENT LES ARMES (pas de cash/money)
--- Toutes les armes détectées en GOLD (comme Legendary)
--- Toggle: INSERT | Auto Pickup: RIGHT SHIFT
--- Distance: 300 studs
+-- === DROP WEAPONS ONLY ESP (GOLD) - FIX BUG MAIN ÉQUIPÉE ===
+-- Seulement armes droppées au sol (pas en main de joueur)
+-- GOLD pour tout | Toggle: INSERT | Auto Pickup: RIGHT SHIFT
+-- Moins de lag : scan workspace:GetChildren() + check précis
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -10,190 +9,156 @@ local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 
--- COULEUR GOLD POUR TOUTES LES ARMES (LÉGENDAIRE STYLE)
-local LEGENDARY_GOLD = Color3.fromRGB(255, 215, 0)  -- Or pur !
+local GOLD_COLOR = Color3.fromRGB(255, 215, 0)  -- Or Legendary
 
 local ESP_ENABLED = true
 local AUTO_PICKUP = false
 local MAX_DIST = 300
 local ESPs = {}
 
--- Mots-clés pour détecter les armes (AK, MP5, RPG, Remi, Draco, etc.)
-local WEAPON_KEYWORDS = {
-    "ak", "ak47", "mp5", "rpg", "remi", "remington", "draco", "tact", "axe", "tactical axe",
-    "crossbow", "revolver", "glock", "db", "double barrel", "c9", "plasma", "lightsaber"  -- Ajoute si nouveaux
-}
+-- Mots pour armes (ajoute si besoin nouveaux drops)
+local WEAPON_KEYWORDS = {"ak", "ak47", "mp5", "rpg", "remi", "remington", "draco", "tact", "axe", "crossbow", "revolver", "glock", "db", "plasma"}
 
-local function isWeapon(item)
-    local name = item.Name:lower()
-    for _, keyword in pairs(WEAPON_KEYWORDS) do
-        if name:find(keyword) then
-            return true
+local function isDroppedWeapon(obj)
+    if not obj then return false end
+    
+    local nameLower = obj.Name:lower()
+    
+    -- Doit matcher un mot-clé arme
+    local isWeaponName = false
+    for _, kw in ipairs(WEAPON_KEYWORDS) do
+        if nameLower:find(kw) then
+            isWeaponName = true
+            break
         end
     end
-    -- Si c'est un Tool ou Model avec Handle/PrimaryPart et pas cash/money
-    if (item:IsA("Tool") or item:IsA("Model")) and not name:find("cash") and not name:find("money") and not name:find("dollar") then
+    if not isWeaponName then return false end
+    
+    -- Pas dans un joueur (pas dans Character)
+    if obj:IsDescendantOf(LocalPlayer.Character) or obj:FindFirstAncestorWhichIsA("Model") and obj:FindFirstAncestorWhichIsA("Model"):FindFirstChildOfClass("Humanoid") then
+        return false
+    end
+    
+    -- Pas de Humanoid (exclut joueurs vivants)
+    if obj:FindFirstChildOfClass("Humanoid") or obj.Parent:FindFirstChildOfClass("Humanoid") then
+        return false
+    end
+    
+    -- Doit être Tool ou Model avec Handle/PrimaryPart
+    if obj:IsA("Tool") or (obj:IsA("Model") and (obj:FindFirstChild("Handle") or obj.PrimaryPart)) then
         return true
     end
+    
     return false
 end
 
-local function createESP(part)
-    if ESPs[part] then return end
-
-    print("🔥 ESP CRÉÉ POUR ARME: " .. part.Name .. " (GOLD Legendary)")
-
-    -- Highlight GOLD
+local function createESP(item)
+    if ESPs[item] then return end
+    
+    local targetPart = item:FindFirstChild("Handle") or item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart")
+    if not targetPart then return end
+    
+    print("🔥 DROP ARME DÉTECTÉE: " .. item.Name .. " → GOLD ESP créé !")
+    
     local highlight = Instance.new("Highlight")
-    highlight.Name = "WeaponESP"
-    highlight.FillColor = LEGENDARY_GOLD
-    highlight.OutlineColor = LEGENDARY_GOLD
-    highlight.FillTransparency = 0.3
+    highlight.FillColor = GOLD_COLOR
+    highlight.OutlineColor = GOLD_COLOR
+    highlight.FillTransparency = 0.35
     highlight.OutlineTransparency = 0
-    highlight.Parent = part
-
-    -- BillboardGui
+    highlight.Parent = item
+    
     local bill = Instance.new("BillboardGui")
-    bill.Name = "WeaponESPBill"
-    bill.Adornee = part
-    bill.Size = UDim2.new(0, 250, 0, 60)
-    bill.StudsOffset = Vector3.new(0, 4, 0)
+    bill.Adornee = targetPart
+    bill.Size = UDim2.new(0, 220, 0, 50)
+    bill.StudsOffset = Vector3.new(0, 3.5, 0)
     bill.AlwaysOnTop = true
-    bill.Parent = part
-
+    bill.Parent = targetPart
+    
     local frame = Instance.new("Frame", bill)
     frame.Size = UDim2.new(1,0,1,0)
     frame.BackgroundColor3 = Color3.new(0,0,0)
-    frame.BackgroundTransparency = 0.4
-    frame.BorderSizePixel = 0
+    frame.BackgroundTransparency = 0.45
+    
     local uc = Instance.new("UICorner", frame)
-    uc.CornerRadius = UDim.new(0,8)
-
-    local nameLbl = Instance.new("TextLabel", frame)
-    nameLbl.Size = UDim2.new(1,-10,0.6,0)
-    nameLbl.Position = UDim2.new(0,5,0,0)
-    nameLbl.BackgroundTransparency = 1
-    nameLbl.Text = part.Name
-    nameLbl.TextColor3 = LEGENDARY_GOLD
-    nameLbl.TextScaled = true
-    nameLbl.Font = Enum.Font.GothamBold
-
-    local typeLbl = Instance.new("TextLabel", frame)
-    typeLbl.Size = UDim2.new(1,-10,0.4,0)
-    typeLbl.Position = UDim2.new(0,5,0.6,0)
-    typeLbl.BackgroundTransparency = 1
-    typeLbl.Text = "LÉGENDAIRE DROP"
-    typeLbl.TextColor3 = LEGENDARY_GOLD
-    typeLbl.TextScaled = true
-    typeLbl.Font = Enum.Font.Gotham
-
-    ESPs[part] = {highlight=highlight, bill=bill}
+    uc.CornerRadius = UDim.new(0,6)
+    
+    local lbl = Instance.new("TextLabel", frame)
+    lbl.Size = UDim2.new(1,0,1,0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = item.Name .. " [DROP]"
+    lbl.TextColor3 = GOLD_COLOR
+    lbl.TextScaled = true
+    lbl.Font = Enum.Font.GothamBold
+    
+    ESPs[item] = {hl = highlight, bill = bill}
 end
 
-local function removeESP(part)
-    if ESPs[part] then
-        ESPs[part].highlight:Destroy()
-        if ESPs[part].bill then ESPs[part].bill:Destroy() end
-        ESPs[part] = nil
-        print("🗑️ ESP SUPPRIMÉ: " .. part.Name)
+local function removeESP(item)
+    if ESPs[item] then
+        if ESPs[item].hl then ESPs[item].hl:Destroy() end
+        if ESPs[item].bill then ESPs[item].bill:Destroy() end
+        ESPs[item] = nil
     end
 end
 
-local function scanWeapons()
+local function scanDrops()
     if not ESP_ENABLED then return end
     if not LocalPlayer.Character or not LocalPlayer.Character.PrimaryPart then return end
-
+    
     local lpPos = LocalPlayer.Character.PrimaryPart.Position
-    local toCheck = {}
-
-    -- 1. ProximityPrompts (pickups d'armes)
-    for _, prompt in pairs(workspace:GetDescendants()) do
-        if prompt:IsA("ProximityPrompt") and prompt.Parent:IsA("BasePart") then
-            table.insert(toCheck, prompt.Parent)
-        end
-    end
-
-    -- 2. Tools droppés (armes)
-    for _, tool in pairs(workspace:GetDescendants()) do
-        if tool:IsA("Tool") then
-            table.insert(toCheck, tool)
-        end
-    end
-
-    -- 3. Models/Parts avec noms d'armes
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if (obj:IsA("Model") or obj:IsA("BasePart")) and isWeapon(obj) then
-            table.insert(toCheck, obj)
-        end
-    end
-
-    -- Process seulement les armes
-    for _, part in pairs(toCheck) do
-        if typeof(part) == "Instance" and part.Parent and isWeapon(part) then
-            local handle = part:IsA("Tool") and part:FindFirstChild("Handle") or 
-                           part.PrimaryPart or part:FindFirstChild("Handle") or 
-                           part:FindFirstChildWhichIsA("BasePart")
-            if not handle then continue end
-
-            local pos = handle.Position
-            local dist = (lpPos - pos).Magnitude
-
-            if dist <= MAX_DIST then
-                createESP(part)
-            else
-                removeESP(part)
+    
+    for _, obj in ipairs(workspace:GetChildren()) do  -- GetChildren() plus rapide que GetDescendants()
+        if isDroppedWeapon(obj) then
+            local part = obj:FindFirstChild("Handle") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+            if part then
+                local dist = (lpPos - part.Position).Magnitude
+                if dist <= MAX_DIST then
+                    createESP(obj)
+                else
+                    removeESP(obj)
+                end
             end
-        end
-    end
-
-    -- Cleanup auto
-    for part, _ in pairs(ESPs) do
-        if not part or not part.Parent then
-            removeESP(part)
+        elseif ESPs[obj] then  -- Cleanup si plus drop
+            removeESP(obj)
         end
     end
 end
 
--- Boucle scan
-RunService.Heartbeat:Connect(scanWeapons)
+RunService.Heartbeat:Connect(scanDrops)
 
--- Toggles
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
     if input.KeyCode == Enum.KeyCode.Insert then
         ESP_ENABLED = not ESP_ENABLED
-        print("=== WEAPONS ESP " .. (ESP_ENABLED and "ACTIVÉ 🔥" or "DÉSACTIVÉ") .. " ===")
+        print("DROP WEAPONS ESP: " .. (ESP_ENABLED and "ON (GOLD)" or "OFF"))
         if not ESP_ENABLED then
-            for part, _ in pairs(ESPs) do removeESP(part) end
+            for item,_ in pairs(ESPs) do removeESP(item) end
         end
     elseif input.KeyCode == Enum.KeyCode.RightShift then
         AUTO_PICKUP = not AUTO_PICKUP
-        print("=== AUTO PICKUP " .. (AUTO_PICKUP and "ACTIVÉ 😈" or "DÉSACTIVÉ") .. " ===")
+        print("AUTO PICKUP DROPS: " .. (AUTO_PICKUP and "ON" or "OFF"))
     end
 end)
 
--- AUTO PICKUP (ramasse auto les armes proches)
+-- Auto pickup simple (fire prompt si proche d'une arme drop)
 spawn(function()
-    while true do
-        if AUTO_PICKUP and ESP_ENABLED then
-            for _, prompt in pairs(workspace:GetDescendants()) do
-                if prompt:IsA("ProximityPrompt") then
-                    local part = prompt.Parent
-                    if part and isWeapon(part) then
-                        local dist = (LocalPlayer.Character.PrimaryPart.Position - part.Position).Magnitude
-                        if dist < 12 then
-                            fireproximityprompt(prompt)
-                        end
+    while wait(0.2) do
+        if not AUTO_PICKUP or not ESP_ENABLED then continue end
+        for _, obj in ipairs(workspace:GetChildren()) do
+            if isDroppedWeapon(obj) then
+                local prompt = obj:FindFirstChildOfClass("ProximityPrompt") or obj:FindFirstChildWhichIsA("ProximityPrompt", true)
+                if prompt then
+                    local dist = (LocalPlayer.Character.PrimaryPart.Position - prompt.Parent.Position).Magnitude
+                    if dist < 12 then
+                        fireproximityprompt(prompt)
+                        print("AUTO PICKUP: " .. obj.Name)
                     end
                 end
             end
         end
-        wait(0.15)
     end
 end)
 
-print("=== WEAPONS ONLY ESP CHARGÉ ! (GOLD Legendary) ===")
-print("INSERT: Toggle ESP | RIGHT SHIFT: Auto Pickup")
-print("Seulement AK/MP5/RPG/Remi/Draco/etc. en GOLD ! Pas de cash/money")
-print("F9 pour voir les détections. Teste un drop d'arme !")
+print("=== DROP WEAPONS ONLY ESP (GOLD) - FIXED BUG MAIN ===")
+print("Seulement armes au sol (pas équipées) | INSERT pour toggle | RIGHT SHIFT auto pickup")
+print("Regarde F9 pour voir les détections quand tu drop une arme !")
